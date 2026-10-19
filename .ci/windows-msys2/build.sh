@@ -96,6 +96,9 @@ sed 's/$/\r/' "$SRC/COPYING" > "$STAGE/LICENSE.TXT"
 sed 's/$/\r/' "$SRC/README.md" > "$STAGE/README.TXT"
 cp -r "$SRC/nsis" "$STAGE/"
 cp "$BUILD/nsis/veyon.nsi" "$STAGE/"
+# the script is written for Linux makensis; the native Windows makensis only
+# accepts backslashes as path separators in File and the MUI bitmaps/icons
+sed -i -E -e '/^\s*File /s,/,\\,g' -e 's,"nsis/,"nsis\\,g' "$STAGE/veyon.nsi"
 
 echo "== Staged files"
 find "$STAGE" -type f | sed "s|$STAGE/||" | sort
