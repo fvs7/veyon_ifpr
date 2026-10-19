@@ -34,6 +34,14 @@
 #include "InternetAccessBlocker.h"
 #include "VeyonCore.h"
 
+#ifdef Q_OS_LINUX
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+#include <QSaveFile>
+#include <QStandardPaths>
+#endif
+
 
 QString InternetAccessBlocker::internetAddressRanges()
 {
@@ -325,6 +333,162 @@ bool InternetAccessBlocker::isBlocked()
 	return withFirewallRules([](INetFwPolicy2*, INetFwRules* rules) {
 		return ruleExists(rules, QString::fromUtf8(RuleNameTcp));
 	});
+}
+
+#elif defined(Q_OS_LINUX)
+
+namespace {
+
+constexpr auto NftFamily = "inet";
+constexpr auto NftTable = "veyon_ifpr";
+constexpr int NftTimeout = 10000;
+
+
+QString nftPath()
+{
+	const auto path = QStandardPaths::findExecutable(QStringLiteral("nft"),
+													 {QStringLiteral("/usr/sbin"), QStringLiteral("/sbin")});
+	return path.isEmpty() ? QStandardPaths::findExecutable(QStringLiteral("nft")) : path;
+}
+
+
+
+bool runNft(const QStringList& arguments, bool logErrors = true)
+{
+	const auto nft = nftPath();
+	if (nft.isEmpty())
+	{
+		vCritical() << "nft not found - please install the nftables package";
+		return false;
+	}
+
+	QProcess process;
+	process.setProcessChannelMode(QProcess::MergedChannels);
+	process.start(nft, arguments);
+	if (process.waitForFinished(NftTimeout) == false)
+	{
+		process.kill();
+		process.waitForFinished();
+		vCritical() << "nft" << arguments << "timed out";
+		return false;
+	}
+
+	if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
+	{
+		if (logErrors)
+		{
+			vCritical() << "nft" << arguments << "failed:" << process.readAll().trimmed();
+		}
+		return false;
+	}
+
+	return true;
+}
+
+
+
+bool tableExists()
+{
+	return runNft({QStringLiteral("list"), QStringLiteral("table"),
+				   QString::fromLatin1(NftFamily), QString::fromLatin1(NftTable)}, false);
+}
+
+
+
+bool loadStateFile()
+{
+	return runNft({QStringLiteral("-f"), QString::fromLatin1(InternetAccessBlocker::LinuxStateFile)});
+}
+
+
+
+// Same address ranges as internetAddressRanges(), expressed as exclusions: everything
+// except private/local IPv4 ranges and everything except IPv6 global unicast (2000::/3)
+// is accepted. "table + delete table" makes loading the file idempotent (atomic replace).
+QString ruleset()
+{
+	return QStringLiteral(
+		"# Veyon IFPR - Internet blocking (generated, removed by \"Liberar Internet\")\n"
+		"table inet veyon_ifpr\n"
+		"delete table inet veyon_ifpr\n"
+		"table inet veyon_ifpr {\n"
+		"\tchain output {\n"
+		"\t\ttype filter hook output priority filter; policy accept;\n"
+		"\t\tip daddr { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, "
+		"192.168.0.0/16, 224.0.0.0/3 } accept\n"
+		"\t\tip6 daddr != 2000::/3 accept\n"
+		"\t\ttcp dport { 80, 443 } reject with tcp reset\n"
+		"\t\tudp dport 443 reject\n"
+		"\t}\n"
+		"}\n");
+}
+
+} // namespace
+
+
+
+bool InternetAccessBlocker::block()
+{
+	const QFileInfo stateFileInfo(QString::fromLatin1(LinuxStateFile));
+	if (QDir().mkpath(stateFileInfo.absolutePath()) == false)
+	{
+		vCritical() << "could not create" << stateFileInfo.absolutePath();
+		return false;
+	}
+
+	// the state file is also loaded by veyon-ifpr-restore.service at boot time
+	QSaveFile stateFile(stateFileInfo.absoluteFilePath());
+	if (stateFile.open(QFile::WriteOnly | QFile::Truncate) == false ||
+		stateFile.write(ruleset().toUtf8()) < 0 ||
+		stateFile.commit() == false)
+	{
+		vCritical() << "could not write" << stateFileInfo.absoluteFilePath();
+		return false;
+	}
+
+	if (loadStateFile() == false)
+	{
+		// never leave a half-configured state behind
+		unblock();
+		return false;
+	}
+
+	vInfo() << "Internet access blocked (HTTP/HTTPS to public addresses)";
+	return true;
+}
+
+
+
+bool InternetAccessBlocker::unblock()
+{
+	QFile::remove(QString::fromLatin1(LinuxStateFile));
+
+	if (tableExists())
+	{
+		runNft({QStringLiteral("delete"), QStringLiteral("table"),
+				QString::fromLatin1(NftFamily), QString::fromLatin1(NftTable)});
+	}
+
+	const auto success = tableExists() == false;
+	if (success)
+	{
+		vInfo() << "Internet access unblocked";
+	}
+	return success;
+}
+
+
+
+bool InternetAccessBlocker::isBlocked()
+{
+	// self-healing: re-apply the rules if they got lost (e.g. "nft flush ruleset")
+	if (QFile::exists(QString::fromLatin1(LinuxStateFile)) && tableExists() == false)
+	{
+		vWarning() << "Internet blocking rules missing - re-applying";
+		loadStateFile();
+	}
+
+	return tableExists();
 }
 
 #else

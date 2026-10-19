@@ -37,6 +37,12 @@
  * Note: the setting only affects devices plugged in AFTER it was applied - storage
  * devices which are already mounted remain usable until they are unplugged.
  *
+ * On Linux disable() installs the udev rule LinuxUdevRuleFile, which deauthorizes every
+ * newly attached USB interface of class 08 (mass storage); restore() removes it again.
+ * The rule file is the persistent "exam mode active" marker. As on Windows, devices
+ * which are already attached are not affected. Requires root privileges (Veyon Server
+ * in an X11 session, e.g. Xubuntu).
+ *
  * On other platforms all methods are no-ops which return false.
  */
 class UsbStorageControl
@@ -48,5 +54,7 @@ public:
 
 	static constexpr unsigned long StartDisabled = 4;
 	static constexpr unsigned long StartOnDemand = 3;
+
+	static constexpr auto LinuxUdevRuleFile = "/etc/udev/rules.d/10-veyon-ifpr-usb-storage.rules";
 
 };

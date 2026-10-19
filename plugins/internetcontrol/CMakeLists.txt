@@ -19,3 +19,16 @@ set_source_files_properties(InternetAccessBlocker.cpp PROPERTIES SKIP_UNITY_BUIL
 if(VEYON_BUILD_WINDOWS)
 	target_link_libraries(internetcontrol PRIVATE -lole32 -loleaut32 -luuid)
 endif()
+
+if(VEYON_BUILD_LINUX)
+	if(NOT SYSTEMD_SERVICE_INSTALL_DIR)
+		set(SYSTEMD_SERVICE_INSTALL_DIR /lib/systemd/system)
+	endif()
+	install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/veyon-ifpr-restore.service DESTINATION ${SYSTEMD_SERVICE_INSTALL_DIR})
+	# enable the unit statically via the package, so no "systemctl enable" is needed after installation
+	file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/multi-user.target.wants)
+	file(CREATE_LINK ../veyon-ifpr-restore.service
+		${CMAKE_CURRENT_BINARY_DIR}/multi-user.target.wants/veyon-ifpr-restore.service SYMBOLIC)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/multi-user.target.wants/veyon-ifpr-restore.service
+		DESTINATION ${SYSTEMD_SERVICE_INSTALL_DIR}/multi-user.target.wants)
+endif()

@@ -41,6 +41,12 @@
  * All methods must be called from a process with administrative privileges
  * (the Veyon Server runs as SYSTEM on Windows).
  *
+ * On Linux the same rules are implemented with nftables in a dedicated table
+ * (inet veyon_ifpr, output hook), which does not interfere with ufw or other
+ * firewall tables. The ruleset is stored in LinuxStateFile and re-applied at boot
+ * by veyon-ifpr-restore.service. This requires root privileges, i.e. the Veyon
+ * Server must run as root, which is the case for X11 sessions (e.g. Xubuntu).
+ *
  * On other platforms all methods are no-ops which return false.
  */
 class InternetAccessBlocker
@@ -56,5 +62,7 @@ public:
 	static constexpr auto RuleGroup = "Veyon IFPR";
 	static constexpr auto RuleNameTcp = "Veyon IFPR - Bloqueio de Internet (TCP 80/443)";
 	static constexpr auto RuleNameUdp = "Veyon IFPR - Bloqueio de Internet (UDP 443/QUIC)";
+
+	static constexpr auto LinuxStateFile = "/var/lib/veyon-ifpr/internet-block.nft";
 
 };

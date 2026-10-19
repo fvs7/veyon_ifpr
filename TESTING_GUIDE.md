@@ -202,7 +202,8 @@ e o texto sobre a distribuição como REA sob GNU GPL v2.
 - Se uma GPO desativar o Windows Defender Firewall ou impedir a mesclagem de regras locais
   (“Aplicar regras de firewall local = Não”), o bloqueio **não terá efeito**. O log do Veyon registra
   um aviso quando o firewall está desativado no perfil ativo.
-- Bloqueio de Internet, USB e faixa da prova estão implementados **somente no Windows**.
+- Bloqueio de Internet, USB e faixa da prova estão implementados no **Windows** e no **Linux**
+  (Linux voltado para Xubuntu, sessão X11; ainda não testado em máquina real). No Linux, ver a seção 10.
 
 ---
 
@@ -228,3 +229,67 @@ taskkill /F /IM veyon-worker.exe
   `finishing exam mode`, `Windows Defender Firewall is DISABLED`.
 
 Registre para cada teste: versão do instalador (hash), versão do Windows, resultado (OK/Falha) e prints.
+
+---
+
+## 10. Linux (Xubuntu)
+
+Os pacotes `.deb` são gerados pelo workflow **Build Linux packages (IFPR)**
+(`.github/workflows/build-linux.yml`): artifact `veyon-ifpr-ubuntu.22.04-deb` (Xubuntu 22.04, Qt 5)
+ou `veyon-ifpr-ubuntu.24.04-deb` (Xubuntu 24.04, Qt 6).
+
+### 10.1 Instalar
+
+```bash
+sha256sum veyon_*.deb                    # comparar com o arquivo .sha256 do artifact
+sudo apt install ./veyon_*.deb           # "apt" (e não "dpkg -i") para instalar as dependências, ex.: nftables
+sudo systemctl enable --now veyon.service
+```
+
+Chaves (o diretório padrão no Linux é `/etc/veyon/keys`):
+
+```bash
+sudo veyon-cli authkeys import professor/public /caminho/professor_public_key.pem
+veyon-cli authkeys list
+```
+
+### 10.2 Como funciona no Linux
+
+| Recurso | Implementação |
+|---|---|
+| Bloquear Internet | Tabela `nftables` própria (`inet veyon_ifpr`, hook *output*): rejeita TCP 80/443 e UDP 443 para IPs **públicos**. Mesmas faixas do Windows; rede local, porta 11100 e DNS não são afetados. Não interfere com o `ufw`. |
+| Persistência | As regras ficam em `/var/lib/veyon-ifpr/internet-block.nft` e são reaplicadas no boot pelo `veyon-ifpr-restore.service` (já habilitado pelo pacote). |
+| Bloquear USB (Modo Prova) | Regra udev `/etc/udev/rules.d/10-veyon-ifpr-usb-storage.rules` que desautoriza novas interfaces USB de armazenamento (classe 08). Teclado, mouse e celular em modo MTP não são afetados. |
+| Faixa da prova | Igual ao Windows. |
+
+**Requisito:** a sessão do aluno deve ser **X11** (padrão do Xubuntu). Em sessões **Wayland** o
+Veyon Server roda sem privilégios de root e não consegue aplicar o bloqueio de Internet nem de USB.
+
+### 10.3 Conferências no PC-ALUNO
+
+```bash
+sudo nft list table inet veyon_ifpr          # existe só enquanto a Internet estiver bloqueada
+curl -sS -m 5 https://www.google.com >/dev/null && echo LIBERADO || echo BLOQUEADO
+ls /etc/udev/rules.d/10-veyon-ifpr-usb-storage.rules   # existe só durante o Modo Prova
+systemctl status veyon-ifpr-restore.service
+```
+
+Execute os testes das seções 5 e 6 normalmente. Na seção 5.3, reinicie o PC-ALUNO com a Internet
+bloqueada: depois do boot, `sudo nft list table inet veyon_ifpr` deve continuar mostrando as regras.
+
+### 10.4 Reversão manual (emergência)
+
+```bash
+sudo nft delete table inet veyon_ifpr
+sudo rm -f /var/lib/veyon-ifpr/internet-block.nft /etc/udev/rules.d/10-veyon-ifpr-usb-storage.rules
+sudo udevadm control --reload-rules
+sudo pkill -f veyon-worker
+```
+
+Pendrives conectados **durante** a prova continuam desautorizados até serem removidos e
+reconectados depois da reversão.
+
+### 10.5 Logs
+
+`journalctl -u veyon.service` e os arquivos `Veyon*.log` em `/tmp` (o serviço e o servidor rodam como
+root). Mensagens relevantes: as mesmas da seção 9, além de `nft not found` e `udevadm`.

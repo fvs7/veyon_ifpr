@@ -1,0 +1,14 @@
+[Unit]
+Description=Veyon IFPR - reapply active Internet blocking after reboot
+ConditionPathExists=/var/lib/veyon-ifpr/internet-block.nft
+After=nftables.service
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /var/lib/veyon-ifpr/internet-block.nft
+
+[Install]
+WantedBy=multi-user.target

@@ -29,6 +29,13 @@
 #include "UsbStorageControl.h"
 #include "VeyonCore.h"
 
+#ifdef Q_OS_LINUX
+#include <QFile>
+#include <QProcess>
+#include <QSaveFile>
+#include <QStandardPaths>
+#endif
+
 
 #ifdef _WIN32
 
@@ -172,6 +179,94 @@ bool UsbStorageControl::isDisabledByExamMode()
 {
 	DWORD value = 0;
 	return RegistryKey(BackupKey, KEY_QUERY_VALUE).readDword(BackupValue, &value);
+}
+
+#elif defined(Q_OS_LINUX)
+
+namespace {
+
+constexpr int UdevadmTimeout = 10000;
+
+bool reloadUdevRules()
+{
+	auto udevadm = QStandardPaths::findExecutable(QStringLiteral("udevadm"),
+												  {QStringLiteral("/usr/bin"), QStringLiteral("/bin"),
+												   QStringLiteral("/sbin")});
+	if (udevadm.isEmpty())
+	{
+		vCritical() << "udevadm not found";
+		return false;
+	}
+
+	QProcess process;
+	process.setProcessChannelMode(QProcess::MergedChannels);
+	process.start(udevadm, {QStringLiteral("control"), QStringLiteral("--reload-rules")});
+	if (process.waitForFinished(UdevadmTimeout) == false ||
+		process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
+	{
+		vCritical() << "udevadm control --reload-rules failed:" << process.readAll().trimmed();
+		return false;
+	}
+
+	return true;
+}
+
+} // namespace
+
+
+
+bool UsbStorageControl::disable()
+{
+	// deauthorize every new USB interface of class 08 (mass storage) - works regardless
+	// of whether the usb-storage/uas modules are already loaded
+	QSaveFile ruleFile(QString::fromLatin1(LinuxUdevRuleFile));
+	if (ruleFile.open(QFile::WriteOnly | QFile::Truncate) == false ||
+		ruleFile.write("# Veyon IFPR - Modo Prova: bloqueia pendrives/midias USB (removido ao finalizar a prova)\n"
+					   "ACTION==\"add\", SUBSYSTEM==\"usb\", ENV{DEVTYPE}==\"usb_interface\", "
+					   "ATTR{bInterfaceClass}==\"08\", ATTR{authorized}=\"0\"\n") < 0 ||
+		ruleFile.commit() == false)
+	{
+		vCritical() << "could not write" << LinuxUdevRuleFile;
+		return false;
+	}
+
+	if (reloadUdevRules() == false)
+	{
+		return false;
+	}
+
+	vInfo() << "USB mass storage disabled (udev rule" << LinuxUdevRuleFile << ")";
+	return true;
+}
+
+
+
+bool UsbStorageControl::restore()
+{
+	const auto ruleFilePath = QString::fromLatin1(LinuxUdevRuleFile);
+	if (QFile::exists(ruleFilePath) == false)
+	{
+		vInfo() << "no exam mode udev rule found - nothing to restore";
+		return true;
+	}
+
+	if (QFile::remove(ruleFilePath) == false)
+	{
+		vCritical() << "could not remove" << ruleFilePath;
+		return false;
+	}
+
+	reloadUdevRules();
+
+	vInfo() << "USB mass storage restored";
+	return true;
+}
+
+
+
+bool UsbStorageControl::isDisabledByExamMode()
+{
+	return QFile::exists(QString::fromLatin1(LinuxUdevRuleFile));
 }
 
 #else
