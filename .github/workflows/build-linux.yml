@@ -43,10 +43,12 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       # .ci/common/linux-build.sh defaults to a Debug build without translations for
-      # untagged commits - CMAKE_FLAGS come later on the command line and override that
+      # untagged commits - CMAKE_FLAGS come later on the command line and override that.
+      # -O3 triggers -Wmaybe-uninitialized false positives in upstream code (x11vnc, Qt
+      # headers), so warnings are not treated as errors here (as in the Windows build).
       - name: Configure, build and package (Release)
         env:
-          CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=Release -DWITH_TRANSLATIONS=ON"
+          CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=Release -DWITH_TRANSLATIONS=ON -DWITH_WERROR=OFF"
         run: .ci/linux.${{ matrix.dist }}/script.sh "$GITHUB_WORKSPACE" /tmp/build
 
       - name: Show package
