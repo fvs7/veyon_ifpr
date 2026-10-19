@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/exammode">
+        <file>exam-start.png</file>
+        <file>exam-stop.png</file>
+    </qresource>
+</RCC>

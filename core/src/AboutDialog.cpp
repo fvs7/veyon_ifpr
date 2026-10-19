@@ -27,6 +27,7 @@
 
 #include "AboutDialog.h"
 #include "VeyonCore.h"
+#include "veyonconfig.h"
 
 #include "ui_AboutDialog.h"
 
@@ -40,6 +41,12 @@ AboutDialog::AboutDialog( QWidget *parent ) :
 	setWindowTitle(tr("About Veyon %1").arg(VeyonCore::versionString()));
 
 	ui->versionLabel->setText( VeyonCore::versionString() );
+
+	// IFPR: institutional edition based on Open Educational Resources (REA) - GNU GPLv2
+	ui->ifprEditionLabel->setText(
+		QStringLiteral("%1 %2<br/><small>Distribuição institucional do IFPR baseada no Veyon, "
+					   "como Recurso Educacional Aberto (REA), sob a licença GNU GPL v2.</small>")
+			.arg(QString::fromUtf8(VEYON_IFPR_EDITION), QString::fromUtf8(VEYON_IFPR_EDITION_VERSION)));
 
 	QFile authors( QStringLiteral( ":/CONTRIBUTORS" ) );
 	if (authors.open(QFile::ReadOnly))

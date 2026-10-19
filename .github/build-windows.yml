@@ -1,0 +1,82 @@
+# Veyon IFPR (REA) - Windows installer build
+# Copyright (c) 2026 IFPR - Campus União da Vitória - GNU GPL v2 or later
+#
+# Cross-compiles Veyon (including the IFPR plugins InternetControl and ExamMode)
+# with MinGW-w64 inside the official Veyon Windows CI image and publishes the
+# NSIS installer (veyon-<version>-win64-setup.exe) as a downloadable artifact.
+#
+# NOTE: upstream Veyon ships NSIS installers (.exe), not .msi packages. The
+# .exe supports unattended installation (/S) and applying a configuration
+# file (/ApplyConfig=...), which covers the usual MSI deployment scenarios.
+
+name: "Build Windows installer (IFPR)"
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - "v*.*.*"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ci_image:
+        description: "Container image with the MinGW-w64/Qt6 toolchain"
+        required: false
+        default: ""
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Windows x86_64 installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      # Official Veyon MinGW-w64 build image (same one used by the upstream GitLab CI).
+      # Override per run (workflow_dispatch input) or permanently via the
+      # repository variable VEYON_WINDOWS_CI_IMAGE.
+      image: ${{ inputs.ci_image || vars.VEYON_WINDOWS_CI_IMAGE || 'registry.gitlab.com/veyon/ci-mingw-w64:main' }}
+    env:
+      CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=Release"
+    steps:
+      - name: Ensure git and NSIS are available
+        shell: bash
+        run: |
+          missing=""
+          command -v git >/dev/null || missing="$missing git ca-certificates"
+          command -v makensis >/dev/null || missing="$missing nsis"
+          if [ -n "$missing" ]; then
+            apt-get update && apt-get install -y --no-install-recommends $missing
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # version/build number and CONTRIBUTORS come from git history
+          submodules: recursive
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # .ci/windows/build.sh runs qt-cmake from /usr/x86_64-w64-mingw32 (which sets up the
+      # MinGW-w64 toolchain) with CMAKE_FLAGS, then builds the given ninja target.
+      # create-windows-installer = full build + windows-binaries + makensis
+      - name: Configure, build and package (Release)
+        shell: bash
+        run: .ci/windows/build.sh x86_64 create-windows-installer
+
+      - name: Show installer
+        shell: bash
+        run: ls -la veyon-*setup.exe && sha256sum veyon-*setup.exe | tee veyon-installer.sha256
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: veyon-ifpr-win64-installer
+          path: |
+            veyon-*setup.exe
+            veyon-installer.sha256
+          if-no-files-found: error
+          retention-days: 30

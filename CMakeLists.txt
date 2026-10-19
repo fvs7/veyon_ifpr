@@ -63,6 +63,12 @@ else()
 	string(REPLACE "v" "" VERSION_STRING "${VERSION_STRING}")
 endif()
 
+# IFPR / REA institutional edition (GNU GPLv2 derivative of Veyon)
+set(VEYON_IFPR_EDITION "IFPR REA - Campus Uniao da Vitoria" CACHE STRING "Institutional edition name shown in the About dialog")
+set(VEYON_IFPR_EDITION_VERSION "1.0.0" CACHE STRING "Institutional edition version shown in the About dialog")
+set(VEYON_IFPR_PUBLIC_KEY_BASE_DIR "\\\\servidor-ifpr\\veyon-keys" CACHE STRING "Default public key base directory on Windows")
+string(REPLACE "\\" "\\\\" VEYON_IFPR_PUBLIC_KEY_BASE_DIR_ESCAPED "${VEYON_IFPR_PUBLIC_KEY_BASE_DIR}")
+
 find_package(Git)
 
 if(GIT_FOUND)
