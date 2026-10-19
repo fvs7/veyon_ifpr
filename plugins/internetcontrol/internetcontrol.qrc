@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/internetcontrol">
+        <file>internet-block.png</file>
+        <file>internet-allow.png</file>
+    </qresource>
+</RCC>

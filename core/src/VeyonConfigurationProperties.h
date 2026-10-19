@@ -38,6 +38,14 @@
 #include "PlatformSessionFunctions.h"
 #include "PlatformUserFunctions.h"
 #include "VncConnectionConfiguration.h"
+#include "veyonconfig.h"
+
+// IFPR: on Windows, public keys are looked up on the institutional file share by default
+#if defined(_WIN32) && defined(VEYON_IFPR_PUBLIC_KEY_BASE_DIR)
+#define VEYON_DEFAULT_PUBLIC_KEY_BASE_DIR QStringLiteral(VEYON_IFPR_PUBLIC_KEY_BASE_DIR)
+#else
+#define VEYON_DEFAULT_PUBLIC_KEY_BASE_DIR QDir::toNativeSeparators( QStringLiteral( "%GLOBALAPPDATA%/keys/public" ) )
+#endif
 
 #define FOREACH_VEYON_CORE_CONFIG_PROPERTIES(OP)		\
 	OP( VeyonConfiguration, VeyonCore::config(), VeyonCore::ApplicationVersion, applicationVersion, setApplicationVersion, "ApplicationVersion", "Core", QVariant::fromValue(VeyonCore::ApplicationVersion::Version_4_0), Configuration::Property::Flag::Hidden )			\
@@ -150,11 +158,11 @@
 	OP( VeyonConfiguration, VeyonCore::config(), QString, guestUserIdentityExtensionValue, setGuestUserIdentityExtensionValue, "GuestUserIdentityExtensionValue", "Master", QString{}, Configuration::Property::Flag::Advanced ) \
 
 #define FOREACH_VEYON_AUTHENTICATION_CONFIG_PROPERTY(OP) \
-	OP( VeyonConfiguration, VeyonCore::config(), VeyonCore::AuthenticationMethod, authenticationMethod, setAuthenticationMethod, "Method", "Authentication", QVariant::fromValue(VeyonCore::AuthenticationMethod::LogonAuthentication), Configuration::Property::Flag::Standard )	\
+	OP( VeyonConfiguration, VeyonCore::config(), VeyonCore::AuthenticationMethod, authenticationMethod, setAuthenticationMethod, "Method", "Authentication", QVariant::fromValue(VeyonCore::AuthenticationMethod::KeyFileAuthentication), Configuration::Property::Flag::Standard )	\
 
 #define FOREACH_VEYON_KEY_AUTHENTICATION_CONFIG_PROPERTY(OP) \
 	OP( VeyonConfiguration, VeyonCore::config(), QString, privateKeyBaseDir, setPrivateKeyBaseDir, "PrivateKeyBaseDir", "Authentication", QDir::toNativeSeparators( QStringLiteral( "%GLOBALAPPDATA%/keys/private" ) ), Configuration::Property::Flag::Advanced )	\
-	OP( VeyonConfiguration, VeyonCore::config(), QString, publicKeyBaseDir, setPublicKeyBaseDir, "PublicKeyBaseDir", "Authentication", QDir::toNativeSeparators( QStringLiteral( "%GLOBALAPPDATA%/keys/public" ) ), Configuration::Property::Flag::Advanced )	\
+	OP( VeyonConfiguration, VeyonCore::config(), QString, publicKeyBaseDir, setPublicKeyBaseDir, "PublicKeyBaseDir", "Authentication", VEYON_DEFAULT_PUBLIC_KEY_BASE_DIR, Configuration::Property::Flag::Advanced )	\
 
 #define FOREACH_VEYON_ACCESS_CONTROL_CONFIG_PROPERTY(OP)		\
 	OP( VeyonConfiguration, VeyonCore::config(), bool, isAccessRestrictedToUserGroups, setAccessRestrictedToUserGroups, "AccessRestrictedToUserGroups", "AccessControl", false , Configuration::Property::Flag::Standard )		\

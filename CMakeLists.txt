@@ -17,6 +17,7 @@ option(WITH_UB_SANITIZER "Build with undefined behavior sanitizer" OFF)
 option(WITH_FUZZERS "Build LLVM fuzzer tests (implies WITH_TESTS=ON)" OFF)
 option(WITH_BUNDLED_LIBVNC "Build with bundled LibVNCServer/Client" OFF)
 option(WITH_WEBAPI "Build WebAPI plugin" ON)
+option(WITH_WERROR "Treat compiler warnings as errors" ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules ${CMAKE_MODULE_PATH})
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -63,6 +64,12 @@ else()
 	string(REPLACE "v" "" VERSION_STRING "${VERSION_STRING}")
 endif()
 
+# IFPR / REA institutional edition (GNU GPLv2 derivative of Veyon)
+set(VEYON_IFPR_EDITION "IFPR REA - Campus Uniao da Vitoria" CACHE STRING "Institutional edition name shown in the About dialog")
+set(VEYON_IFPR_EDITION_VERSION "1.0.0" CACHE STRING "Institutional edition version shown in the About dialog")
+set(VEYON_IFPR_PUBLIC_KEY_BASE_DIR "\\\\servidor-ifpr\\veyon-keys" CACHE STRING "Default public key base directory on Windows")
+string(REPLACE "\\" "\\\\" VEYON_IFPR_PUBLIC_KEY_BASE_DIR_ESCAPED "${VEYON_IFPR_PUBLIC_KEY_BASE_DIR}")
+
 find_package(Git)
 
 if(GIT_FOUND)
@@ -95,7 +102,8 @@ endif()
 # set up basic platform variables
 if(WIN32)
 	set(VEYON_BUILD_WINDOWS 1)
-	if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+	# IFPR: native Windows builds report AMD64 instead of x86_64
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
 		set(VEYON_BUILD_WIN64 1)
 		set(VEYON_WINDOWS_ARCH "win64")
 	else()

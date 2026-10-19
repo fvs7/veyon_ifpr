@@ -37,7 +37,8 @@ The following features are available in Veyon:
 endif()
 
 set(CPACK_DEBIAN_PACKAGE_SECTION "Education")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqca-qt5-2-plugins")
+# IFPR: nftables is required by the InternetControl and ExamMode plugins
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqca-qt5-2-plugins, nftables")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_COMPRESSION_TYPE "xz")
 

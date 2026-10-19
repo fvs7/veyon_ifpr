@@ -1,0 +1,65 @@
+# Veyon IFPR (REA) - Linux packages for (X)Ubuntu
+# Copyright (c) 2026 IFPR - Campus União da Vitória - GNU GPL v2 or later
+#
+# Builds Veyon (including the IFPR plugins InternetControl and ExamMode) inside the
+# public upstream CI images (veyon/ci.linux.*) with the upstream build scripts and
+# publishes the .deb packages as downloadable artifacts.
+#
+# Ubuntu 22.04 builds with Qt 5 (as upstream), Ubuntu 24.04 with Qt 6.
+
+name: "Build Linux packages (IFPR)"
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - "v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deb:
+    name: ${{ matrix.dist }} .deb
+    strategy:
+      fail-fast: false
+      matrix:
+        dist:
+          - ubuntu.22.04
+          - ubuntu.24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container: veyon/ci.linux.${{ matrix.dist }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # version/build number and CONTRIBUTORS come from git history
+          submodules: recursive
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # .ci/common/linux-build.sh defaults to a Debug build without translations for
+      # untagged commits - CMAKE_FLAGS come later on the command line and override that.
+      # -O3 triggers -Wmaybe-uninitialized false positives in upstream code (x11vnc, Qt
+      # headers), so warnings are not treated as errors here (as in the Windows build).
+      - name: Configure, build and package (Release)
+        env:
+          CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=Release -DWITH_TRANSLATIONS=ON -DWITH_WERROR=OFF"
+        run: .ci/linux.${{ matrix.dist }}/script.sh "$GITHUB_WORKSPACE" /tmp/build
+
+      - name: Show package
+        run: ls -la *.deb && sha256sum *.deb | tee veyon-${{ matrix.dist }}.sha256
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: veyon-ifpr-${{ matrix.dist }}-deb
+          path: |
+            *.deb
+            veyon-${{ matrix.dist }}.sha256
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,119 @@
+# Veyon IFPR (REA) - Windows installer build
+# Copyright (c) 2026 IFPR - Campus União da Vitória - GNU GPL v2 or later
+#
+# Builds Veyon (including the IFPR plugins InternetControl and ExamMode) natively on
+# a GitHub Windows runner with the MSYS2 UCRT64 toolchain and publishes the NSIS
+# installer (veyon-<version>-win64-setup.exe) as a downloadable artifact.
+#
+# The upstream Windows build cross-compiles inside a private container image
+# (registry.gitlab.com/veyon/ci-mingw-w64), which is not publicly available, so this
+# workflow uses public MSYS2 packages instead. See .ci/windows-msys2/build.sh.
+#
+# NOTE: upstream Veyon ships NSIS installers (.exe), not .msi packages. The
+# .exe supports unattended installation (/S) and applying a configuration
+# file (/ApplyConfig=...), which covers the usual MSI deployment scenarios.
+
+name: "Build Windows installer (IFPR)"
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - "v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Interception library (keyboard/mouse filter used by Veyon's Windows platform plugin)
+  INTERCEPTION_REPO: https://github.com/oblitum/Interception
+  INTERCEPTION_COMMIT: 39eecbbc46a52e0402f783b872ef62b0254a896a
+
+jobs:
+  build-windows:
+    name: Windows x86_64 installer (MSYS2 UCRT64)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # shell scripts must keep LF line endings; UltraVNC has very deep paths
+      - name: Configure git for Windows
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # version/build number and CONTRIBUTORS come from git history
+          submodules: recursive
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+            pkgconf:p
+            ntldd:p
+            nsis:p
+            qt6-base:p
+            qt6-tools:p
+            qt6-declarative:p
+            qt6-translations:p
+            qt6-5compat:p
+            qt6-imageformats:p
+            qt6-httpserver:p
+            qt6-websockets:p
+            qca-qt6:p
+            openssl:p
+            openldap:p
+            cyrus-sasl:p
+            libvncserver:p
+            lzo2:p
+            libjpeg-turbo:p
+            libpng:p
+            zlib:p
+
+      - name: Show toolchain versions
+        run: |
+          git config --global --add safe.directory '*'
+          gcc --version | head -1
+          cmake --version | head -1
+          pacman -Q mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-qca-qt6 mingw-w64-ucrt-x86_64-nsis
+
+      - name: Build Interception library
+        run: |
+          git clone --quiet "$INTERCEPTION_REPO" /tmp/interception
+          git -C /tmp/interception checkout --quiet "$INTERCEPTION_COMMIT"
+          gcc -O2 -Wall -shared -DINTERCEPTION_EXPORT \
+            -o "$MINGW_PREFIX/bin/interception.dll" \
+            /tmp/interception/library/interception.c \
+            -Wl,--out-implib,"$MINGW_PREFIX/lib/libinterception.dll.a"
+          cp /tmp/interception/library/interception.h "$MINGW_PREFIX/include/"
+
+      - name: Configure, build and package (Release)
+        run: bash .ci/windows-msys2/build.sh
+
+      - name: Show installer
+        run: ls -la veyon-*setup.exe && sha256sum veyon-*setup.exe | tee veyon-installer.sha256
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: veyon-ifpr-win64-installer
+          path: |
+            veyon-*setup.exe
+            veyon-installer.sha256
+          if-no-files-found: error
+          retention-days: 30
