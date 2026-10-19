@@ -47,7 +47,10 @@ ExamModeOverlay::ExamModeOverlay(QScreen* screen, const QString& text) :
 
 	if (m_screen)
 	{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		setScreen(m_screen);
+#endif
+		// on Qt 5 the absolute geometry set below places the window on the right screen
 		connect(m_screen, &QScreen::geometryChanged, this, &ExamModeOverlay::updateGeometryForScreen);
 	}
 	updateGeometryForScreen();

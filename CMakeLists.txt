@@ -17,6 +17,7 @@ option(WITH_UB_SANITIZER "Build with undefined behavior sanitizer" OFF)
 option(WITH_FUZZERS "Build LLVM fuzzer tests (implies WITH_TESTS=ON)" OFF)
 option(WITH_BUNDLED_LIBVNC "Build with bundled LibVNCServer/Client" OFF)
 option(WITH_WEBAPI "Build WebAPI plugin" ON)
+option(WITH_WERROR "Treat compiler warnings as errors" ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules ${CMAKE_MODULE_PATH})
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

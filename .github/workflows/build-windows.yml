@@ -1,9 +1,13 @@
 # Veyon IFPR (REA) - Windows installer build
 # Copyright (c) 2026 IFPR - Campus União da Vitória - GNU GPL v2 or later
 #
-# Cross-compiles Veyon (including the IFPR plugins InternetControl and ExamMode)
-# with MinGW-w64 inside the official Veyon Windows CI image and publishes the
-# NSIS installer (veyon-<version>-win64-setup.exe) as a downloadable artifact.
+# Builds Veyon (including the IFPR plugins InternetControl and ExamMode) natively on
+# a GitHub Windows runner with the MSYS2 UCRT64 toolchain and publishes the NSIS
+# installer (veyon-<version>-win64-setup.exe) as a downloadable artifact.
+#
+# The upstream Windows build cross-compiles inside a private container image
+# (registry.gitlab.com/veyon/ci-mingw-w64), which is not publicly available, so this
+# workflow uses public MSYS2 packages instead. See .ci/windows-msys2/build.sh.
 #
 # NOTE: upstream Veyon ships NSIS installers (.exe), not .msi packages. The
 # .exe supports unattended installation (/S) and applying a configuration
@@ -17,58 +21,90 @@ on:
       - '**'
     tags-ignore:
       - "v*.*.*"
-  pull_request:
   workflow_dispatch:
-    inputs:
-      ci_image:
-        description: "Container image with the MinGW-w64/Qt6 toolchain"
-        required: false
-        default: ""
 
 concurrency:
   group: build-windows-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Interception library (keyboard/mouse filter used by Veyon's Windows platform plugin)
+  INTERCEPTION_REPO: https://github.com/oblitum/Interception
+  INTERCEPTION_COMMIT: 39eecbbc46a52e0402f783b872ef62b0254a896a
+
 jobs:
   build-windows:
-    name: Windows x86_64 installer
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    container:
-      # Official Veyon MinGW-w64 build image (same one used by the upstream GitLab CI).
-      # Override per run (workflow_dispatch input) or permanently via the
-      # repository variable VEYON_WINDOWS_CI_IMAGE.
-      image: ${{ inputs.ci_image || vars.VEYON_WINDOWS_CI_IMAGE || 'registry.gitlab.com/veyon/ci-mingw-w64:main' }}
-    env:
-      CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=Release"
+    name: Windows x86_64 installer (MSYS2 UCRT64)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
-      - name: Ensure git and NSIS are available
-        shell: bash
+      # shell scripts must keep LF line endings; UltraVNC has very deep paths
+      - name: Configure git for Windows
+        shell: pwsh
         run: |
-          missing=""
-          command -v git >/dev/null || missing="$missing git ca-certificates"
-          command -v makensis >/dev/null || missing="$missing nsis"
-          if [ -n "$missing" ]; then
-            apt-get update && apt-get install -y --no-install-recommends $missing
-          fi
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
 
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0          # version/build number and CONTRIBUTORS come from git history
           submodules: recursive
 
-      - name: Mark workspace as safe for git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+            pkgconf:p
+            ntldd:p
+            nsis:p
+            qt6-base:p
+            qt6-tools:p
+            qt6-translations:p
+            qt6-5compat:p
+            qt6-imageformats:p
+            qt6-httpserver:p
+            qt6-websockets:p
+            qca-qt6:p
+            openssl:p
+            openldap:p
+            cyrus-sasl:p
+            libvncserver:p
+            lzo2:p
+            libjpeg-turbo:p
+            libpng:p
+            zlib:p
 
-      # .ci/windows/build.sh runs qt-cmake from /usr/x86_64-w64-mingw32 (which sets up the
-      # MinGW-w64 toolchain) with CMAKE_FLAGS, then builds the given ninja target.
-      # create-windows-installer = full build + windows-binaries + makensis
+      - name: Show toolchain versions
+        run: |
+          git config --global --add safe.directory '*'
+          gcc --version | head -1
+          cmake --version | head -1
+          pacman -Q mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-qca-qt6 mingw-w64-ucrt-x86_64-nsis
+
+      - name: Build Interception library
+        run: |
+          git clone --quiet "$INTERCEPTION_REPO" /tmp/interception
+          git -C /tmp/interception checkout --quiet "$INTERCEPTION_COMMIT"
+          gcc -O2 -Wall -shared -DINTERCEPTION_EXPORT \
+            -o "$MINGW_PREFIX/bin/interception.dll" \
+            /tmp/interception/library/interception.c \
+            -Wl,--out-implib,"$MINGW_PREFIX/lib/libinterception.dll.a"
+          cp /tmp/interception/library/interception.h "$MINGW_PREFIX/include/"
+
       - name: Configure, build and package (Release)
-        shell: bash
-        run: .ci/windows/build.sh x86_64 create-windows-installer
+        run: bash .ci/windows-msys2/build.sh
 
       - name: Show installer
-        shell: bash
         run: ls -la veyon-*setup.exe && sha256sum veyon-*setup.exe | tee veyon-installer.sha256
 
       - name: Upload installer
